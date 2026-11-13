@@ -8,6 +8,9 @@
 *.apk
 *.aab
 *.idsig
+# 例外：apk/ 是在线更新的发布目录，APK 需要进仓库提供直链
+!apk/
+!apk/*.apk
 
 # ===== 本机配置与签名（绝不入库）=====
 local.properties

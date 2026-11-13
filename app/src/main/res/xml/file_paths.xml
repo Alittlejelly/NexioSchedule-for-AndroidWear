@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 在线更新下载的 APK：getExternalFilesDir("update") 与 filesDir/update 兜底 -->
+    <external-files-path name="update_external" path="update/" />
+    <files-path name="update_internal" path="update/" />
+</paths>

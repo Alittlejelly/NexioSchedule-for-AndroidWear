@@ -19,6 +19,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -26,6 +32,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
@@ -40,10 +47,15 @@ import androidx.wear.compose.foundation.rotary.RotaryScrollableDefaults
 import androidx.wear.compose.material3.TimeText
 import com.haooz.chedule.R
 import com.haooz.chedule.data.SyncMeta
+import com.haooz.chedule.update.AppUpdate
+import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 关于页 / 应用状态。
@@ -108,6 +120,9 @@ fun AboutScreen(
                     error = meta.lastError,
                 )
             }
+
+            item { SectionHeader("版本更新") }
+            item { UpdateCard(versionName) }
 
             item { SectionHeader("如何使用") }
             item {
@@ -350,4 +365,111 @@ private fun syncTimeText(lastSyncAt: Long): String {
             .toLocalTime()
             .format(syncFormatter)
     }.getOrDefault("--:--")
+}
+
+/** 版本更新卡片的界面状态 */
+private sealed interface UpdateUi {
+    data object Idle : UpdateUi
+    data object Checking : UpdateUi
+    data class HasUpdate(val info: AppUpdate.Info) : UpdateUi
+    data object UpToDate : UpdateUi
+    data class Downloading(val progress: Int) : UpdateUi
+    data class Ready(val file: File) : UpdateUi
+    data class Failed(val message: String) : UpdateUi
+}
+
+/**
+ * 在线更新卡：检查更新（Gitee 优先、GitHub 兜底）→ 显示新版本 → 下载（带进度）→ 唤起系统安装器。
+ */
+@Composable
+private fun UpdateCard(currentVersionName: String) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var ui by remember { mutableStateOf<UpdateUi>(UpdateUi.Idle) }
+    var installPromptedFor by remember { mutableStateOf<File?>(null) }
+
+    // 下载完成后自动唤起一次安装器；失败时用户仍可点「安装」重试
+    LaunchedEffect(ui) {
+        val file = (ui as? UpdateUi.Ready)?.file
+        if (file != null && installPromptedFor != file) {
+            installPromptedFor = file
+            runCatching { AppUpdate.install(context, file) }
+        }
+    }
+
+    fun check() {
+        ui = UpdateUi.Checking
+        scope.launch {
+            ui = withContext(Dispatchers.IO) {
+                AppUpdate.fetchLatest(context).fold(
+                    onSuccess = { info ->
+                        info?.let(UpdateUi::HasUpdate) ?: UpdateUi.UpToDate
+                    },
+                    onFailure = { UpdateUi.Failed(it.message ?: "检查失败") },
+                )
+            }
+        }
+    }
+
+    fun download(info: AppUpdate.Info) {
+        ui = UpdateUi.Downloading(0)
+        scope.launch {
+            ui = withContext(Dispatchers.IO) {
+                AppUpdate.downloadApk(context, info) { progress ->
+                    ui = UpdateUi.Downloading(progress)
+                }.fold(
+                    onSuccess = { UpdateUi.Ready(it) },
+                    onFailure = { UpdateUi.Failed(it.message ?: "下载失败") },
+                )
+            }
+        }
+    }
+
+    val statusText = when (val s = ui) {
+        UpdateUi.Idle -> "当前 v$currentVersionName"
+        UpdateUi.Checking -> "正在检查更新…"
+        is UpdateUi.HasUpdate ->
+            "发现新版本 v${s.info.versionName}（来自 ${s.info.source}）" +
+                if (s.info.notes.isNotBlank()) "\n${s.info.notes}" else ""
+        UpdateUi.UpToDate -> "已是最新版本 v$currentVersionName"
+        is UpdateUi.Downloading -> "正在下载… ${s.progress}%"
+        is UpdateUi.Ready -> "下载完成，请在弹出的安装器中确认"
+        is UpdateUi.Failed -> s.message
+    }
+
+    val actionLabel: String? = when (val s = ui) {
+        UpdateUi.Idle, UpdateUi.UpToDate, is UpdateUi.Failed -> "检查更新"
+        is UpdateUi.HasUpdate -> "下载更新"
+        is UpdateUi.Ready -> "安装"
+        else -> null // Checking / Downloading 进行中，不给按钮
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Tokens.CardRadius))
+            .background(Tokens.Surface)
+            .padding(horizontal = 8.dp, vertical = 7.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Label(
+            statusText,
+            TextStyle(fontSize = 12.sp, color = Tokens.TextSecondary),
+            textAlign = TextAlign.Center,
+            maxLines = 3,
+        )
+        actionLabel?.let { label ->
+            Spacer(Modifier.height(6.dp))
+            PillButton(
+                label,
+                Tokens.FabBlue,
+                onClick = {
+                    when (val s = ui) {
+                        is UpdateUi.HasUpdate -> download(s.info)
+                        else -> check()
+                    }
+                },
+            )
+        }
+    }
 }
