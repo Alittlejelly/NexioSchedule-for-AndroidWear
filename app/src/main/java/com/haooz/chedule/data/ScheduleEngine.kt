@@ -171,6 +171,27 @@ object ScheduleEngine {
         else -> CoursePhase.FINISHED
     }
 
+    /**
+     * 距开课倒计时文案（对齐手环端 util.formatCountdown）：
+     * 「还有 X 小时 Y 分钟」/「还有 X 分钟」/「马上开始」
+     */
+    fun countdownText(minutesToStart: Int): String =
+        if (minutesToStart <= 0) "马上开始" else "还有 " + durationText(minutesToStart)
+
+    /** 距下课剩余文案（对齐手环端 util.formatRemain）：「还有 X 分钟」/「即将下课」 */
+    fun remainText(minutesToEnd: Int): String =
+        if (minutesToEnd <= 0) "即将下课" else "还有 " + durationText(minutesToEnd)
+
+    private fun durationText(totalMinutes: Int): String {
+        val h = totalMinutes / 60
+        val m = totalMinutes % 60
+        return when {
+            h > 0 && m > 0 -> "$h 小时 $m 分钟"
+            h > 0 -> "$h 小时"
+            else -> "$totalMinutes 分钟"
+        }
+    }
+
     /** 今天还有几节课（尚未结束的都算） */
     fun remainingCount(slots: List<CourseSlot>, nowMinute: Int): Int =
         slots.count { it.endMinute > nowMinute }

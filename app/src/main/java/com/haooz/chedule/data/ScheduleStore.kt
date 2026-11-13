@@ -76,6 +76,14 @@ object ScheduleStore {
         updateMeta { it.copy(lastError = message) }
     }
 
+    /** 清空课表与同步记录（用于移除演示数据） */
+    @Synchronized
+    fun clear() {
+        runCatching { fileOf(FILE_PAYLOAD)?.delete() }
+        runCatching { fileOf(FILE_META)?.delete() }
+        _state.value = StoreSnapshot()
+    }
+
     private fun updateMeta(block: (SyncMeta) -> SyncMeta): SyncMeta {
         val next = block(_state.value.meta)
         _state.value = _state.value.copy(meta = next)

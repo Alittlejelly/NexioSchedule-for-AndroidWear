@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.haooz.chedule.R
 import com.haooz.chedule.data.CourseSlot
+import com.haooz.chedule.data.ScheduleEngine
 
 /** 统一文本封装：单一入口控制省略与行数，避免各处 BasicText 参数散落 */
 @Composable
@@ -49,20 +50,22 @@ fun Label(
     )
 }
 
-/** 课程元信息：教师｜地点，缺一不可时空串 */
-fun metaText(slot: CourseSlot): String = listOf(slot.course.teacher, slot.course.location)
+/** 课程元信息：地点｜教师（顺序对齐手环端 buildMeta），缺一不可时空串 */
+fun metaText(slot: CourseSlot): String = listOf(slot.course.location, slot.course.teacher)
     .filter { it.isNotBlank() }
     .joinToString("｜")
 
-/** 卡片底部：第 9-10 节｜地点 */
-fun sectionMetaText(slot: CourseSlot): String = listOf(slot.course.sectionText(), slot.course.location)
-    .filter { it.isNotBlank() }
-    .joinToString("｜")
+/** 卡片底部：第 9-10 节｜地点｜教师（对齐手环端 buildMeta 的 节次|教室|教师 顺序） */
+fun sectionMetaText(slot: CourseSlot): String =
+    listOf(slot.course.sectionText(), slot.course.location, slot.course.teacher)
+        .filter { it.isNotBlank() }
+        .joinToString("｜")
 
-fun stateLabel(state: CardState): String = when (state) {
-    CardState.SOON -> "快上课了"
+/** 主卡状态标签（对齐手环端）：上课中蓝 / 快上课了红 / 其余下节课蓝 */
+fun heroLabel(state: CardState): String = when (state) {
     CardState.ONGOING -> "正在上课"
-    CardState.UPCOMING -> "即将开始"
+    CardState.SOON -> "快上课了"
+    CardState.UPCOMING -> "下节课"
     CardState.FINISHED -> "已结束"
 }
 
@@ -82,10 +85,11 @@ fun HeroCard(
     val accent = if (isRed) Tokens.AccentRed else Tokens.AccentBlue
     val iconRes = if (isRed) R.drawable.ic_megaphone else R.drawable.ic_plane
 
+    // 倒计时文案（对齐手环端）：上课中距下课，否则距开课
     val countdown = when (state) {
-        CardState.SOON -> "还有 ${(slot.startMinute - nowMinute).coerceAtLeast(1)} 分钟"
-        CardState.ONGOING -> "还有 ${(slot.endMinute - nowMinute).coerceAtLeast(1)} 分钟"
-        else -> slot.timeRangeText
+        CardState.ONGOING -> ScheduleEngine.remainText(slot.endMinute - nowMinute)
+        CardState.SOON, CardState.UPCOMING -> ScheduleEngine.countdownText(slot.startMinute - nowMinute)
+        CardState.FINISHED -> slot.timeRangeText
     }
 
     Box(
@@ -99,7 +103,7 @@ fun HeroCard(
             modifier = Modifier.padding(start = 10.dp, top = 9.dp, end = 10.dp, bottom = 9.dp),
         ) {
             Label(
-                text = stateLabel(state),
+                text = heroLabel(state),
                 style = Tokens.heroLabel(),
                 modifier = Modifier.padding(end = 40.dp),
             )
@@ -123,11 +127,12 @@ fun HeroCard(
     }
 }
 
-/** 普通课程卡片（设计稿「复选/按钮」）：#222 底、22px 圆角 */
+/** 普通课程卡片（设计稿「复选/按钮」）：#222 底、22px 圆角。状态行由调用方给出（今天未上课显示倒计时） */
 @Composable
 fun CourseCard(
     slot: CourseSlot,
     state: CardState,
+    statusText: String,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -137,7 +142,7 @@ fun CourseCard(
             .background(Tokens.Surface)
             .padding(start = 7.dp, top = 5.dp, end = 4.dp, bottom = 5.dp),
     ) {
-        Label(stateLabel(state), Tokens.cardLabel(state))
+        Label(statusText, Tokens.cardLabel(state))
         Spacer(Modifier.height(1.dp))
         Label(slot.course.name, Tokens.cardName(), maxLines = 1)
         Spacer(Modifier.height(1.dp))

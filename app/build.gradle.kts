@@ -19,8 +19,8 @@ android {
         minSdk = 30
         // 与已验证可在小米手表 5 上安装的工程保持一致：targetSdk 不用 37
         targetSdk = 36
-        versionCode = 8
-        versionName = "1.0.8"
+        versionCode = 101
+        versionName = "1.0.1 Wear"
 
         // 只保留手表实际使用的 ABI（与已验证可推送的工程一致）：
         // 去掉 x86/x86_64 可减小体积、缩短蓝牙推送耗时，也避免原生库匹配出岔子
@@ -62,15 +62,29 @@ android {
                 keyAlias = "androiddebugkey"
                 keyPassword = "android"
             }
+            // 与 debug 一致：部分手表定制系统的安装器只认 v1(JAR) 签名，纯 v2 会被判「包无效」
+            enableV1Signing = true
+            enableV2Signing = true
         }
     }
 
     buildTypes {
         release {
-            // 暂不开启混淆：先用最小变量验证能否安装
-            isMinifyEnabled = false
+            // R8 混淆 + 资源裁剪：APK 体积几乎全在 dex（未混淆时 22MB+），主要收益在这。
+            // 全工程无反射调用（已核查），Compose/Wear 库自带 consumer rules，可放心开启。
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             signingConfig = signingConfigs.getByName("release")
         }
+    }
+
+    androidResources {
+        // 只保留中英文语言资源，裁掉 Wear/Compose 库带来的几十种 locale（resources.arsc 瘦身）
+        localeFilters += listOf("zh", "en")
     }
 
     buildFeatures {

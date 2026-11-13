@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,22 +17,29 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumnDefaults
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
+import androidx.wear.compose.foundation.rotary.RotaryScrollableDefaults
 import androidx.wear.compose.material3.TimeText
 import com.haooz.chedule.data.CoursePhase
 import com.haooz.chedule.data.CourseSlot
 import com.haooz.chedule.data.DaySchedule
+import com.haooz.chedule.data.DemoSchedule
 import com.haooz.chedule.data.ScheduleEngine
 import com.haooz.chedule.data.SchedulePayload
 import com.haooz.chedule.data.ScheduleSettings
+import com.haooz.chedule.data.ScheduleStore
+import com.haooz.chedule.sync.WatchSync
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
+import kotlin.math.roundToInt
 
 /** 日期可翻页范围：以今天为轴，前后各一年 */
 private const val DAY_RANGE = 365
@@ -42,9 +50,8 @@ private const val DAY_RANGE = 365
  * - 顶部时间用 Wear 官方 [TimeText]，沿屏幕圆弧贴合边缘，随分钟自动刷新
  * - 左右横滑切换日期：用 [HorizontalPager] 承载，滑动即翻页，自带跟手与惯性动画；
  *   底部箭头、悬浮「今」按钮统一走 animateScrollToPage，动画曲线一致
- * - 列表用 [ScalingLazyColumn]：位于屏幕中间的卡片放大、上下两侧缩小淡出
- * - rotaryScrollableBehavior 显式传 null：默认实现依赖 Wear OS 系统库 wear-sdk，
- *   小米手表5（HyperOS）没有该库，会在首帧 NoClassDefFoundError 闪退
+ * - 有课列表用 [ScalingLazyColumn]（缩放手感），但修正默认初始定位并关闭 autoCentering；
+ *   表冠滚动可用（触觉关闭以规避小米手表5缺失的 com.google.wear.input 系统类）
  */
 @Composable
 fun HomeScreen(
@@ -115,7 +122,6 @@ private fun DayPage(
     val nowMinute = ScheduleEngine.nowMinute(now)
     val isToday = date == LocalDate.now()
     val lead = settings.preClassMinutes
-    val listState = rememberScalingLazyListState()
 
     val slots = day?.slots.orEmpty()
     // 无课（含未同步）：不走列表，改成整页 Column —— 列表内容是「有多少排多少」，
@@ -136,6 +142,20 @@ private fun DayPage(
             Spacer(Modifier.weight(1f))
             EmptyState()
             Spacer(Modifier.weight(1f))
+            if (payload == null || payload.scheduleName == DemoSchedule.DEMO_NAME) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PillButton(
+                        "示例课表",
+                        Tokens.Surface,
+                        onClick = { WatchSync.onPayload(DemoSchedule.buildJson(), "演示数据") },
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+            }
             ListActions(showToday = !isToday, onAbout = onAbout, onToday = onToday)
             // 让开底部日期切换栏（覆盖层，46dp）
             Spacer(Modifier.height(Tokens.BarHeight))
@@ -143,6 +163,21 @@ private fun DayPage(
         return
     }
 
+    // ScalingLazyColumn（保留卡片随滚动缩放的手感），但修正两个默认行为：
+    // 1) 初始定位：rememberScalingLazyListState 默认把 index 1 滚到屏幕正中，日期头会被挤出顶部；
+    //    这里显式给 initialCenterItemIndex = 0 + 偏移，让首项（日期头）落在曲面时间下方。
+    //    ItemCenter 锚点下首项顶部 = 屏幕半高 − 首项半高 − scrollOffset，
+    //    即 scrollOffset = 半高 − 26dp(顶部让位) − 17dp(日期头半高，约 34dp 高)。
+    // 2) autoCentering = null：内容不满一屏时不再整段垂直居中。
+    // 表冠触觉必须关掉：默认实现依赖 com.google.wear.input 系统库，小米手表5上没有（详见 Haptics.kt）。
+    val density = LocalDensity.current
+    val config = LocalConfiguration.current
+    val listState = rememberScalingLazyListState(
+        initialCenterItemIndex = 0,
+        initialCenterItemScrollOffset = with(density) {
+            (config.screenHeightDp.dp / 2 - 43.dp).toPx().roundToInt()
+        },
+    )
     ScalingLazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
@@ -154,10 +189,11 @@ private fun DayPage(
         ),
         verticalArrangement = Arrangement.spacedBy(4.dp),
         scalingParams = ScalingLazyColumnDefaults.scalingParams(),
-        // 关掉自动居中：有课但内容不满一屏时，默认会把整段内容垂直居中，
-        // 上下各留一大块空白，看着像「被顶到中间」。关掉后内容从顶部开始排。
         autoCentering = null,
-        rotaryScrollableBehavior = null,
+        rotaryScrollableBehavior = RotaryScrollableDefaults.behavior(
+            listState,
+            hapticFeedbackEnabled = false,
+        ),
     ) {
         item {
             DateHeader(
@@ -194,13 +230,30 @@ private fun DayPage(
                 CourseCard(
                     slot = slot,
                     state = cardState(slot, nowMinute, lead, isToday),
+                    statusText = cardStatusLabel(slot, cardState(slot, nowMinute, lead, isToday), nowMinute, isToday),
                 )
             }
         }
 
-        // 无课已在上面用整页 Column 处理，这里只会有课
-        // 列表末尾：「关于」与「今」并排；回到今天时「今」不渲染，「关于」自动居中
+        // 列表末尾：「关于」与「今」并排；回到今天时「今」不渲染
         item { ListActions(showToday = !isToday, onAbout = onAbout, onToday = onToday) }
+
+        // 演示模式下提供一键清除，避免误当成真实课表
+        if (payload?.scheduleName == DemoSchedule.DEMO_NAME) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PillButton(
+                        "清空示例",
+                        Tokens.Surface,
+                        onClick = { ScheduleStore.clear() },
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -254,6 +307,19 @@ private fun cardState(slot: CourseSlot, nowMinute: Int, lead: Int, isToday: Bool
         CoursePhase.UPCOMING -> CardState.UPCOMING
         CoursePhase.FINISHED -> CardState.FINISHED
     }
+}
+
+/** 课程卡状态行（对齐手环端卡片）：未开始 / 上课中 / 已结束，非今天统一「未开始」；倒计时只出现在主卡 */
+private fun cardStatusLabel(
+    slot: CourseSlot,
+    state: CardState,
+    nowMinute: Int,
+    isToday: Boolean,
+): String = when {
+    !isToday -> "未开始"
+    state == CardState.ONGOING -> "上课中"
+    state == CardState.FINISHED -> "已结束"
+    else -> "未开始"
 }
 
 private fun periodOf(slot: CourseSlot): String = when {

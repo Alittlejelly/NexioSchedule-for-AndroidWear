@@ -19,17 +19,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
@@ -40,12 +36,14 @@ import androidx.compose.ui.unit.sp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumnDefaults
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
+import androidx.wear.compose.foundation.rotary.RotaryScrollableDefaults
 import androidx.wear.compose.material3.TimeText
 import com.haooz.chedule.R
 import com.haooz.chedule.data.SyncMeta
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.math.roundToInt
 
 /**
  * 关于页 / 应用状态。
@@ -60,15 +58,22 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun AboutScreen(
     meta: SyncMeta,
-    connected: Boolean,
     versionName: String,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val listState = rememberScalingLazyListState()
-    // 顶部固定区高度实测值：不用魔数猜 TimeText 有多高，量到多少就让出多少
-    var headerHeightPx by remember { mutableIntStateOf(0) }
-    val headerHeight = with(LocalDensity.current) { headerHeightPx.toDp() }
+    val density = LocalDensity.current
+    val config = LocalConfiguration.current
+    // ItemCenter 锚点下，首项顶部落在「屏幕半高 − 项高/2 − scrollOffset」处。
+    // 默认开屏把首项滚到屏幕正中，顶部空出一大块；这里给显式初始位置：
+    // 首项（标题，高 30dp）顶部正好在 58dp，即曲面时间正下方。
+    val initialOffsetPx = with(density) {
+        (config.screenHeightDp.dp / 2 - 73.dp).toPx().roundToInt()
+    }
+    val listState = rememberScalingLazyListState(
+        initialCenterItemIndex = 0,
+        initialCenterItemScrollOffset = initialOffsetPx,
+    )
 
     Box(modifier = modifier.fillMaxSize()) {
         ScalingLazyColumn(
@@ -77,21 +82,28 @@ fun AboutScreen(
             contentPadding = PaddingValues(
                 start = Tokens.ScreenPaddingH,
                 end = Tokens.ScreenPaddingH,
-                // 顶部固定区（曲面时间 + 标题）不再随列表滚动，内容直接从它下方开始
-                top = if (headerHeightPx > 0) headerHeight + 4.dp else 58.dp,
+                top = 58.dp,
                 bottom = 30.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(6.dp),
             scalingParams = ScalingLazyColumnDefaults.scalingParams(),
-            // 关掉自动居中：内容不满一屏时默认会整段垂直居中，顶部留一大块空白
+            // 关掉 autoCentering：它会在列表头部插占位 Spacer，抢占 index 0，
+            // 使上面的 initialCenterItemIndex = 0 指向 Spacer 而不是标题
             autoCentering = null,
-            rotaryScrollableBehavior = null,
+            // 表冠滚动：默认触觉反馈依赖 Google Wear 系统库（小米手表5上不存在，会闪退），
+            // hapticFeedbackEnabled = false 绕开它；详见 HomeScreen 同款注释
+            rotaryScrollableBehavior = RotaryScrollableDefaults.behavior(
+                listState,
+                hapticFeedbackEnabled = false,
+            ),
         ) {
+            // 「应用状态」标题跟随列表滚动
+            item { AboutHeader(onBack = onBack) }
+
             item { AppIdentity(versionName) }
 
             item {
                 StatusCard(
-                    connected = connected,
                     lastSyncAt = meta.lastReceivedAt,
                     error = meta.lastError,
                 )
@@ -109,7 +121,7 @@ fun AboutScreen(
                 ) {
                     HowLine("安卓手机下载")
                     HowLine("Nexio课程表")
-                    HowLine("连接后使用")
+                    HowLine("在手机端设置-导入导出-导出中导入课表")
                 }
             }
 
@@ -133,30 +145,12 @@ fun AboutScreen(
             item { RewardCard() }
         }
 
-        // 顶部固定区：曲面时间 + 标题栏。
-        // 不放进列表是因为 Wear 的 ScalingLazyColumn 没有 stickyHeader，放进去就会跟着滚走。
-        // 底部铺一段同色渐变，让滚上来的内容在标题下方淡出，不会与标题撞在一起。
-        Column(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .onGloballyPositioned { headerHeightPx = it.size.height }
-                .background(
-                    Brush.verticalGradient(
-                        0f to Tokens.Bg,
-                        0.72f to Tokens.Bg,
-                        1f to Color.Transparent,
-                    )
-                ),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            TimeText()
-            AboutHeader(onBack = onBack)
-        }
+        // 贴合屏幕上边缘的曲面时间（覆盖层，不参与列表滚动）
+        TimeText(modifier = Modifier.align(Alignment.TopCenter))
     }
 }
 
-/** 固定标题栏：箭头紧贴标题左侧，整组居中；末尾补等宽透明占位让标题落在屏幕中线 */
+/** 标题栏（列表首项，跟随滚动）：箭头紧贴标题左侧，整组居中；末尾补等宽透明占位让标题落在屏幕中线 */
 @Composable
 private fun AboutHeader(onBack: () -> Unit) {
     Row(
@@ -293,12 +287,18 @@ private fun CreditRow(avatarRes: Int, name: String, role: String) {
     }
 }
 
-/** 状态卡：渐变底 + 大号状态 + 高亮时间 + 右上徽标（Figma #102:62） */
+/**
+ * 状态卡：渐变底 + 时间 + 右上徽标（Figma #102:62）。
+ * BLE 连接只在推送课表那几秒真实存在，所以不显示「已连接/未连接」瞬时态：
+ * 只要连接过（收到过一次课表）就整卡绿色 + 对勾，标题恒为「最近一次连接」，
+ * 时间为最近一次收到课表的时刻；从未收到过才是琥珀色 + 印章。
+ */
 @Composable
-private fun StatusCard(connected: Boolean, lastSyncAt: Long, error: String) {
-    val topColor = if (connected) Tokens.StatusOkTop else Tokens.StatusWarnTop
+private fun StatusCard(lastSyncAt: Long, error: String) {
+    val everConnected = lastSyncAt > 0
+    val topColor = if (everConnected) Tokens.StatusOkTop else Tokens.StatusWarnTop
     val bottomColor = Tokens.StatusWarnBottom
-    val accent = if (connected) Tokens.StatusOkAccent else Tokens.StatusWarnAccent
+    val accent = if (everConnected) Tokens.StatusOkAccent else Tokens.StatusWarnAccent
 
     Box(
         modifier = Modifier
@@ -310,7 +310,7 @@ private fun StatusCard(connected: Boolean, lastSyncAt: Long, error: String) {
             modifier = Modifier.padding(start = 9.dp, top = 7.dp, end = 9.dp, bottom = 9.dp),
         ) {
             Label(
-                if (connected) "手机已连接" else "手机未连接",
+                "最近一次连接",
                 TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Tokens.TextPrimary),
             )
             Spacer(Modifier.height(2.dp))
@@ -318,13 +318,9 @@ private fun StatusCard(connected: Boolean, lastSyncAt: Long, error: String) {
                 syncTimeText(lastSyncAt),
                 TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Bold, color = accent),
             )
-            Label(
-                "最后一次本地更新时间",
-                TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Tokens.TextSecondary),
-            )
-            // 未连接时把失败原因直接摆出来：是没发现手机、还是拉取失败，
-            // 否则只有一个「手机未连接」，出问题只能靠猜。
-            if (!connected && error.isNotBlank()) {
+            // 从未连接过时把失败原因直接摆出来：是没发现手机、还是拉取失败，
+            // 否则只有一个 --:--，出问题只能靠猜。
+            if (!everConnected && error.isNotBlank()) {
                 Spacer(Modifier.height(3.dp))
                 Label(
                     error,
@@ -334,7 +330,7 @@ private fun StatusCard(connected: Boolean, lastSyncAt: Long, error: String) {
             }
         }
         Image(
-            painter = painterResource(if (connected) R.drawable.ic_check else R.drawable.ic_seal),
+            painter = painterResource(if (everConnected) R.drawable.ic_check else R.drawable.ic_seal),
             contentDescription = null,
             modifier = Modifier
                 .align(Alignment.TopEnd)

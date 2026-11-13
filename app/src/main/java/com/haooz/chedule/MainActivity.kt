@@ -14,7 +14,17 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -23,19 +33,32 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.wear.compose.foundation.hierarchicalFocusGroup
 import com.haooz.chedule.data.ScheduleStore
 import com.haooz.chedule.sync.BleScheduleServer
 import com.haooz.chedule.sync.WatchSync
 import com.haooz.chedule.ui.AboutScreen
 import com.haooz.chedule.ui.HomeScreen
+import com.haooz.chedule.ui.Label
+import com.haooz.chedule.ui.PillButton
 import com.haooz.chedule.ui.Tokens
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalTime
 
 class MainActivity : ComponentActivity() {
@@ -80,7 +103,15 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun NexioApp() {
     val snapshot by ScheduleStore.state.collectAsState()
-    val connected by WatchSync.connected.collectAsState()
+
+    // 上次崩溃日志：启动时异步读出，读到则盖一层反馈卡（复制 / 继续启动）
+    var lastCrash by remember { mutableStateOf<String?>(null) }
+    val clipboard = LocalClipboardManager.current
+    val appContext = LocalContext.current
+    LaunchedEffect(Unit) {
+        val crash = withContext(Dispatchers.IO) { CrashReporter.consume(appContext) }
+        if (!crash.isNullOrBlank()) lastCrash = crash
+    }
 
     var showAbout by remember { mutableStateOf(false) }
     var now by remember { mutableStateOf(LocalTime.now()) }
@@ -130,9 +161,12 @@ fun NexioApp() {
     Box(modifier = Modifier.fillMaxSize().background(Tokens.Bg)) {
         // 下层主界面：随进度缩小 + 压暗，形成「关于页盖在上面」的层级感。
         // 常驻组合，返回时 Pager 页码与滚动位置都不丢。
+        // hierarchicalFocusGroup：关于页打开时把主界面标为非活跃，
+        // 表冠焦点只给关于页的列表，避免旋转表冠滚到屏幕背后的主页。
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .hierarchicalFocusGroup(active = !showAbout)
                 .graphicsLayer {
                     val open = 1f - progress.value
                     val scale = 1f - 0.10f * open
@@ -204,10 +238,51 @@ fun NexioApp() {
                 Box(modifier = Modifier.fillMaxSize().background(Tokens.Bg)) {
                     AboutScreen(
                         meta = snapshot.meta,
-                        connected = connected,
                         versionName = versionName,
                         onBack = { showAbout = false },
                     )
+                }
+            }
+        }
+
+        // 「上次运行崩溃」反馈卡：盖在最上层，读完整堆栈，可复制回传
+        lastCrash?.let { crashText ->
+            val crashScroll = rememberScrollState()
+            Box(modifier = Modifier.fillMaxSize().background(Tokens.Bg)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 14.dp, vertical = 30.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Label(
+                        "上次运行崩溃",
+                        TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Tokens.TextPrimary),
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .verticalScroll(crashScroll)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Tokens.Surface)
+                            .padding(8.dp),
+                    ) {
+                        Label(
+                            crashText.take(6000),
+                            TextStyle(fontSize = 8.sp, color = Tokens.TextSecondary),
+                            maxLines = 500,
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        PillButton("复制", Tokens.Surface, onClick = {
+                            clipboard.setText(AnnotatedString(crashText))
+                        })
+                        Spacer(Modifier.width(10.dp))
+                        PillButton("继续", Tokens.FabBlue, onClick = { lastCrash = null })
+                    }
                 }
             }
         }
