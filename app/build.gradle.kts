@@ -50,8 +50,14 @@ android {
                 if (f.exists()) f.inputStream().use { load(it) }
             }
             val storePath = props.getProperty("nexio.store.file")
-            if (storePath != null && file(storePath).exists()) {
-                storeFile = file(storePath)
+            // 路径可能相对仓库根（app/nexio-watch.jks）也可能相对 app 模块，
+            // 两处都试：之前只用 file()（相对 app/）解析 "app/nexio-watch.jks"
+            // 变成 app/app/nexio-watch.jks 找不到文件，静默退回 debug 证书
+            val store = storePath?.let {
+                sequenceOf(rootProject.file(it), file(it)).firstOrNull { f -> f.exists() }
+            }
+            if (store != null) {
+                storeFile = store
                 storePassword = props.getProperty("nexio.store.password", "")
                 keyAlias = props.getProperty("nexio.key.alias", "nexio")
                 keyPassword = props.getProperty("nexio.key.password", "")
