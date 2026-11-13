@@ -25,9 +25,12 @@ object AppUpdate {
     const val OWNER = "Alittlejelly"
     const val REPO = "NexioSchedule-for-AndroidWear"
 
+    /** Gitee 镜像仓库名（用户名不同：littlejelly） */
+    const val GITEE_OWNER = "littlejelly"
+
     /** 检查/下载源，顺序即优先级：国内 Gitee 优先，GitHub 兜底 */
     private val RAW_BASES = listOf(
-        "https://gitee.com/$OWNER/$REPO/raw/main/" to "Gitee",
+        "https://gitee.com/$GITEE_OWNER/$REPO/raw/main/" to "Gitee",
         "https://raw.githubusercontent.com/$OWNER/$REPO/main/" to "GitHub",
     )
 
