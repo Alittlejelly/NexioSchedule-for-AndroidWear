@@ -1,6 +1,6 @@
 {
-  "versionCode": 102,
-  "versionName": "1.0.2 Wear",
-  "apkPath": "apk/Nexio-watch-1.0.2-Wear-102.apk",
-  "notes": "1. 修复首页课程列表表冠滚动失效的问题\n2. 修复课程页与关于页的页面定位问题\n3. 手机端适配 OPPO Watch 传输（需配合新版手机端应用）"
+  "versionCode": 103,
+  "versionName": "1.0.3 Wear",
+  "apkPath": "apk/Nexio-watch-1.0.3-Wear-103.apk",
+  "notes": "1. 修复检查到新版本时界面无提示的问题，现在会自动跳转到更新页\n2. 更新页整页支持上下滚动与表冠操作\n3. 优化更新日志展示，长日志不再截断"
 }

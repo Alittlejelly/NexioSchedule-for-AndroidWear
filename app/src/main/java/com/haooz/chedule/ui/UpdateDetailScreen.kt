@@ -60,7 +60,7 @@ fun UpdateDetailScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     }
 
     Box(modifier = modifier.fillMaxSize()) {
-        // 内容区可滚动 + 表冠支持（触觉必须关，绕开小米手表5缺失的 Google 系统类）
+        // 整页滚动（标题栏也跟随），表冠支持（触觉必须关，绕开小米手表5缺失的 Google 系统类）
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -69,6 +69,7 @@ fun UpdateDetailScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                     behavior = RotaryScrollableDefaults.behavior(scrollState, hapticFeedbackEnabled = false),
                     focusRequester = rotaryFocus,
                 )
+                .verticalScroll(scrollState)
                 .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -94,95 +95,87 @@ fun UpdateDetailScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
             }
             Spacer(Modifier.height(14.dp))
 
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .verticalScroll(scrollState),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                // 有新版本 → 新版本日志；否则依次取 本次检查结果 / 本地缓存（当前版本日志）
-                val hasUpdate = ui is UpdateUi.HasUpdate || ui is UpdateUi.Downloading || ui is UpdateUi.Ready
-                val info = (ui as? UpdateUi.HasUpdate)?.info
-                    ?: UpdateSession.currentLog
-                    ?: UpdateSession.cachedLog
-                if (info == null && ui == UpdateUi.Checking) {
-                    // 无缓存且正在检测时的过渡提示
+            // 有新版本 → 新版本日志；否则依次取 本次检查结果 / 本地缓存（当前版本日志）
+            val hasUpdate = ui is UpdateUi.HasUpdate || ui is UpdateUi.Downloading || ui is UpdateUi.Ready
+            val info = (ui as? UpdateUi.HasUpdate)?.info
+                ?: UpdateSession.currentLog
+                ?: UpdateSession.cachedLog
+            if (info == null && ui == UpdateUi.Checking) {
+                // 无缓存且正在检测时的过渡提示
+                Label(
+                    "正在检查更新…",
+                    TextStyle(fontSize = 12.sp, color = Tokens.TextSecondary),
+                )
+            }
+            if (info != null) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(Tokens.CardRadius))
+                        .background(Tokens.Surface)
+                        .padding(10.dp),
+                ) {
                     Label(
-                        "正在检查更新…",
-                        TextStyle(fontSize = 12.sp, color = Tokens.TextSecondary),
+                        if (hasUpdate) {
+                            "新版本 v${info.versionName}（来自 ${info.source}）"
+                        } else {
+                            "当前版本 v${info.versionName} · 已是最新"
+                        },
+                        TextStyle(fontSize = 12.sp, color = Tokens.TextPrimary),
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Label(
+                        "更新日志",
+                        TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Tokens.TextPrimary),
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Label(
+                        info.notes.ifBlank { "性能优化与问题修复" },
+                        TextStyle(fontSize = 11.sp, color = Tokens.TextSecondary),
+                        maxLines = 20,
                     )
                 }
-                if (info != null) {
-                    Column(
+            }
+
+            // 下载/安装区跟随内容排在日志下方，随滚动一起移动
+            Spacer(Modifier.height(12.dp))
+            when (val s = ui) {
+                is UpdateUi.Downloading -> {
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(Tokens.CardRadius))
-                            .background(Tokens.Surface)
-                            .padding(10.dp),
+                            .height(5.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(Tokens.Surface),
                     ) {
-                        Label(
-                            if (hasUpdate) {
-                                "新版本 v${info.versionName}（来自 ${info.source}）"
-                            } else {
-                                "当前版本 v${info.versionName} · 已是最新"
-                            },
-                            TextStyle(fontSize = 12.sp, color = Tokens.TextPrimary),
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Label(
-                            "更新日志",
-                            TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Tokens.TextPrimary),
-                        )
-                        Spacer(Modifier.height(2.dp))
-                        Label(
-                            info.notes.ifBlank { "性能优化与问题修复" },
-                            TextStyle(fontSize = 11.sp, color = Tokens.TextSecondary),
-                            maxLines = 20,
-                        )
-                    }
-                }
-
-                // 下载/安装区跟随内容排在日志下方，随滚动一起移动
-                Spacer(Modifier.height(12.dp))
-                when (val s = ui) {
-                    is UpdateUi.Downloading -> {
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth()
+                                .fillMaxWidth(s.progress / 100f)
                                 .height(5.dp)
-                                .clip(RoundedCornerShape(3.dp))
-                                .background(Tokens.Surface),
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth(s.progress / 100f)
-                                    .height(5.dp)
-                                    .background(Brush.horizontalGradient(0f to UpdatePillTop, 1f to UpdateCardTop)),
-                            )
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        Label(
-                            "正在下载… ${s.progress}%",
-                            TextStyle(fontSize = 11.sp, color = Tokens.TextSecondary),
+                                .background(Brush.horizontalGradient(0f to UpdatePillTop, 1f to UpdateCardTop)),
                         )
                     }
-                    is UpdateUi.Ready -> {
-                        Label(
-                            "下载完成，请在安装器中确认",
-                            TextStyle(fontSize = 11.sp, color = Tokens.TextSecondary),
-                            maxLines = 2,
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        UpdatePill("安装", onClick = { UpdateSession.install(context, s.file) })
-                    }
-                    is UpdateUi.HasUpdate -> {
-                        UpdatePill("下载并安装", onClick = { UpdateSession.download(context, s.info) })
-                    }
-                    else -> {}
+                    Spacer(Modifier.height(8.dp))
+                    Label(
+                        "正在下载… ${s.progress}%",
+                        TextStyle(fontSize = 11.sp, color = Tokens.TextSecondary),
+                    )
                 }
-                Spacer(Modifier.height(24.dp))
+                is UpdateUi.Ready -> {
+                    Label(
+                        "下载完成，请在安装器中确认",
+                        TextStyle(fontSize = 11.sp, color = Tokens.TextSecondary),
+                        maxLines = 2,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    UpdatePill("安装", onClick = { UpdateSession.install(context, s.file) })
+                }
+                is UpdateUi.HasUpdate -> {
+                    UpdatePill("下载并安装", onClick = { UpdateSession.download(context, s.info) })
+                }
+                else -> {}
             }
+            Spacer(Modifier.height(24.dp))
         }
 
         // 贴合屏幕上边缘的曲面时间
