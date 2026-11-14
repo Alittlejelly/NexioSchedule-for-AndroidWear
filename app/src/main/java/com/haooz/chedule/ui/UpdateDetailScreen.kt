@@ -142,46 +142,47 @@ fun UpdateDetailScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                         )
                     }
                 }
-            }
 
-            // 进度条 + 状态/按钮区（固定在底部，不随日志滚动）
-            when (val s = ui) {
-                is UpdateUi.Downloading -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(5.dp)
-                            .clip(RoundedCornerShape(3.dp))
-                            .background(Tokens.Surface),
-                    ) {
+                // 下载/安装区跟随内容排在日志下方，随滚动一起移动
+                Spacer(Modifier.height(12.dp))
+                when (val s = ui) {
+                    is UpdateUi.Downloading -> {
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth(s.progress / 100f)
+                                .fillMaxWidth()
                                 .height(5.dp)
-                                .background(Brush.horizontalGradient(0f to UpdatePillTop, 1f to UpdateCardTop)),
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(Tokens.Surface),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(s.progress / 100f)
+                                    .height(5.dp)
+                                    .background(Brush.horizontalGradient(0f to UpdatePillTop, 1f to UpdateCardTop)),
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Label(
+                            "正在下载… ${s.progress}%",
+                            TextStyle(fontSize = 11.sp, color = Tokens.TextSecondary),
                         )
                     }
-                    Spacer(Modifier.height(8.dp))
-                    Label(
-                        "正在下载… ${s.progress}%",
-                        TextStyle(fontSize = 11.sp, color = Tokens.TextSecondary),
-                    )
+                    is UpdateUi.Ready -> {
+                        Label(
+                            "下载完成，请在安装器中确认",
+                            TextStyle(fontSize = 11.sp, color = Tokens.TextSecondary),
+                            maxLines = 2,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        UpdatePill("安装", onClick = { UpdateSession.install(context, s.file) })
+                    }
+                    is UpdateUi.HasUpdate -> {
+                        UpdatePill("下载并安装", onClick = { UpdateSession.download(context, s.info) })
+                    }
+                    else -> {}
                 }
-                is UpdateUi.Ready -> {
-                    Label(
-                        "下载完成，请在安装器中确认",
-                        TextStyle(fontSize = 11.sp, color = Tokens.TextSecondary),
-                        maxLines = 2,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    UpdatePill("安装", onClick = { UpdateSession.install(context, s.file) })
-                }
-                is UpdateUi.HasUpdate -> {
-                    UpdatePill("下载并安装", onClick = { UpdateSession.download(context, s.info) })
-                }
-                else -> {}
+                Spacer(Modifier.height(24.dp))
             }
-            Spacer(Modifier.height(24.dp))
         }
 
         // 贴合屏幕上边缘的曲面时间
