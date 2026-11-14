@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.wear.compose.foundation.hierarchicalFocusGroup
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumnDefaults
 import androidx.wear.compose.foundation.lazy.items
@@ -80,14 +81,24 @@ fun HomeScreen(
             modifier = Modifier.fillMaxSize(),
         ) { page ->
             val date = today.plusDays((page - DAY_RANGE).toLong())
-            DayPage(
-                payload = payload,
-                date = date,
-                now = now,
-                offset = offset,
-                onAbout = onAbout,
-                onToday = { goTo(DAY_RANGE) },
-            )
+            // Pager 会同时组合相邻页，每页的 ScalingLazyColumn 都会用
+            // requestFocusOnHierarchyActive 抢表冠焦点，导致当前页抢不到。
+            // 按文档要求给页面套 hierarchicalFocusGroup：只有已停靠的当前页激活，
+            // 焦点只落在它内部的列表上（关于页同理，MainActivity 已在盖层处理）。
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .hierarchicalFocusGroup(active = page == pagerState.settledPage),
+            ) {
+                DayPage(
+                    payload = payload,
+                    date = date,
+                    now = now,
+                    offset = offset,
+                    onAbout = onAbout,
+                    onToday = { goTo(DAY_RANGE) },
+                )
+            }
         }
 
         // 贴合屏幕上边缘的曲面时间
