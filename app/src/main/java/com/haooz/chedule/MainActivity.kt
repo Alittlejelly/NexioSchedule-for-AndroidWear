@@ -55,6 +55,7 @@ import com.haooz.chedule.ui.HomeScreen
 import com.haooz.chedule.ui.Label
 import com.haooz.chedule.ui.PillButton
 import com.haooz.chedule.ui.Tokens
+import com.haooz.chedule.ui.UpdateDetailScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -114,6 +115,7 @@ fun NexioApp() {
     }
 
     var showAbout by remember { mutableStateOf(false) }
+    var showUpdateDetail by remember { mutableStateOf(false) }
     var now by remember { mutableStateOf(LocalTime.now()) }
 
     // 版本号从 PackageManager 读，不依赖 BuildConfig（生成类在 IDE 索引未同步时会误报找不到）
@@ -186,6 +188,8 @@ fun NexioApp() {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    // 更新日志页盖在关于页上时，让关于页让出表冠焦点
+                    .hierarchicalFocusGroup(active = !showUpdateDetail)
                     .graphicsLayer { translationX = progress.value * size.width }
                     .pointerInput(Unit) {
                         val width = size.width.coerceAtLeast(1).toFloat()
@@ -240,8 +244,16 @@ fun NexioApp() {
                         meta = snapshot.meta,
                         versionName = versionName,
                         onBack = { showAbout = false },
+                        onOpenUpdateDetail = { showUpdateDetail = true },
                     )
                 }
+            }
+        }
+
+        // 「版本更新」详情页：独立全屏页面，从关于页的更新卡片进入
+        if (showUpdateDetail) {
+            Box(modifier = Modifier.fillMaxSize().background(Tokens.Bg)) {
+                UpdateDetailScreen(onBack = { showUpdateDetail = false })
             }
         }
 
