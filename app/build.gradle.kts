@@ -19,8 +19,8 @@ android {
         minSdk = 30
         // 与已验证可在小米手表 5 上安装的工程保持一致：targetSdk 不用 37
         targetSdk = 36
-        versionCode = 101
-        versionName = "1.0.1 Wear"
+        versionCode = 102
+        versionName = "1.0.2 Wear"
 
         // 只保留手表实际使用的 ABI（与已验证可推送的工程一致）：
         // 去掉 x86/x86_64 可减小体积、缩短蓝牙推送耗时，也避免原生库匹配出岔子
