@@ -30,12 +30,9 @@ import androidx.wear.compose.material3.TimeText
 import com.haooz.chedule.data.CoursePhase
 import com.haooz.chedule.data.CourseSlot
 import com.haooz.chedule.data.DaySchedule
-import com.haooz.chedule.data.DemoSchedule
 import com.haooz.chedule.data.ScheduleEngine
 import com.haooz.chedule.data.SchedulePayload
 import com.haooz.chedule.data.ScheduleSettings
-import com.haooz.chedule.data.ScheduleStore
-import com.haooz.chedule.sync.WatchSync
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
@@ -142,20 +139,6 @@ private fun DayPage(
             Spacer(Modifier.weight(1f))
             EmptyState()
             Spacer(Modifier.weight(1f))
-            if (payload == null || payload.scheduleName == DemoSchedule.DEMO_NAME) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    PillButton(
-                        "示例课表",
-                        Tokens.Surface,
-                        onClick = { WatchSync.onPayload(DemoSchedule.buildJson(), "演示数据") },
-                    )
-                }
-                Spacer(Modifier.height(4.dp))
-            }
             ListActions(showToday = !isToday, onAbout = onAbout, onToday = onToday)
             // 让开底部日期切换栏（覆盖层，46dp）
             Spacer(Modifier.height(Tokens.BarHeight))
@@ -237,23 +220,6 @@ private fun DayPage(
 
         // 列表末尾：「关于」与「今」并排；回到今天时「今」不渲染
         item { ListActions(showToday = !isToday, onAbout = onAbout, onToday = onToday) }
-
-        // 演示模式下提供一键清除，避免误当成真实课表
-        if (payload?.scheduleName == DemoSchedule.DEMO_NAME) {
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    PillButton(
-                        "清空示例",
-                        Tokens.Surface,
-                        onClick = { ScheduleStore.clear() },
-                    )
-                }
-            }
-        }
     }
 }
 

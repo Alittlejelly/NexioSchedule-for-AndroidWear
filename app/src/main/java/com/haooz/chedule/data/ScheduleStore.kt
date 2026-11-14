@@ -76,7 +76,7 @@ object ScheduleStore {
         updateMeta { it.copy(lastError = message) }
     }
 
-    /** 清空课表与同步记录（用于移除演示数据） */
+    /** 清空课表与同步记录 */
     @Synchronized
     fun clear() {
         runCatching { fileOf(FILE_PAYLOAD)?.delete() }

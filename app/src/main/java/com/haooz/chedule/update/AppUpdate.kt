@@ -53,7 +53,12 @@ object AppUpdate {
     }.getOrDefault("")
 
     /** 拉取 update.json；没有比本机更新的版本时返回 null。异常时返回 Error */
-    fun fetchLatest(context: Context): Result<Info?> {
+    /**
+     * 读取仓库 update.json。无论是否有新版本都返回 Info（update.json 的 notes 描述的
+     * 就是最新一版的更新日志——已装到最新时它就是「当前版本」的日志，供详情页展示）。
+     * 调用方用 [Info.versionCode] 与本机 [currentVersionCode] 比较判断是否有更新。
+     */
+    fun fetchLatest(context: Context): Result<Info> {
         val current = currentVersionCode(context)
         for ((base, source) in RAW_BASES) {
             try {
@@ -64,11 +69,7 @@ object AppUpdate {
                 val apkPath = o.optString("apkPath", "")
                 if (apkPath.isBlank()) continue
                 return Result.success(
-                    if (code > current) {
-                        Info(code, o.optString("versionName", ""), apkPath, o.optString("notes", ""), source)
-                    } else {
-                        null // 已是最新
-                    }
+                    Info(code, o.optString("versionName", ""), apkPath, o.optString("notes", ""), source)
                 )
             } catch (_: Exception) {
                 // 换下一个源

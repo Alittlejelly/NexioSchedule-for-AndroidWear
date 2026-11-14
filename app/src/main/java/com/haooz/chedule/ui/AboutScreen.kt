@@ -1,5 +1,6 @@
 package com.haooz.chedule.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -367,7 +368,7 @@ private fun syncTimeText(lastSyncAt: Long): String {
     }.getOrDefault("--:--")
 }
 
-/** 版本更新卡片的界面状态 */
+/** 版本更新的界面状态 */
 private sealed interface UpdateUi {
     data object Idle : UpdateUi
     data object Checking : UpdateUi
@@ -378,15 +379,44 @@ private sealed interface UpdateUi {
     data class Failed(val message: String) : UpdateUi
 }
 
+// 配色取自设计稿（画板 29/32）：卡片黑→蓝渐变，按钮深蓝渐变
+private val UpdateCardTop = Color(0xFF3381FF)
+private val UpdateCardBottom = Color.Black
+private val UpdatePillTop = Color(0xFF175EC6)
+private val UpdatePillBottom = Color(0xFF1C4D93)
+
+/** 蓝渐变胶囊按钮（设计稿「检查更新」样式） */
+@Composable
+private fun UpdatePill(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(13.dp))
+            .background(Brush.verticalGradient(0f to UpdatePillTop, 1f to UpdatePillBottom))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Label(
+            text,
+            TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium, color = Color.White),
+        )
+    }
+}
+
 /**
- * 在线更新卡：检查更新（Gitee 优先、GitHub 兜底）→ 显示新版本 → 下载（带进度）→ 唤起系统安装器。
+ * 在线更新（设计稿：画板29 卡片 / 画板30 箭头徽标 / 画板32 详情页）。
+ * 检查更新（Gitee 优先、GitHub 兜底）→ 发现新版本进入全屏更新日志页 → 下载（带进度）→ 唤起安装器。
  */
 @Composable
 private fun UpdateCard(currentVersionName: String) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var ui by remember { mutableStateOf<UpdateUi>(UpdateUi.Idle) }
+    var showDetail by remember { mutableStateOf(false) }
     var installPromptedFor by remember { mutableStateOf<File?>(null) }
+    // 已是最新时记录远程 Info：update.json 的 notes 就是当前安装版本的更新日志，
+    // 点徽标/卡片可进入详情页查看（与有新版本时同一个页面）
+    var currentLog by remember { mutableStateOf<AppUpdate.Info?>(null) }
 
     // 下载完成后自动唤起一次安装器；失败时用户仍可点「安装」重试
     LaunchedEffect(ui) {
@@ -403,7 +433,14 @@ private fun UpdateCard(currentVersionName: String) {
             ui = withContext(Dispatchers.IO) {
                 AppUpdate.fetchLatest(context).fold(
                     onSuccess = { info ->
-                        info?.let(UpdateUi::HasUpdate) ?: UpdateUi.UpToDate
+                        if (info.versionCode > AppUpdate.currentVersionCode(context)) {
+                            showDetail = true
+                            UpdateUi.HasUpdate(info)
+                        } else {
+                            // 已是最新：update.json 描述的就是本版本的日志，记下来供详情页展示
+                            currentLog = info
+                            UpdateUi.UpToDate
+                        }
                     },
                     onFailure = { UpdateUi.Failed(it.message ?: "检查失败") },
                 )
@@ -425,50 +462,179 @@ private fun UpdateCard(currentVersionName: String) {
         }
     }
 
-    val statusText = when (val s = ui) {
-        UpdateUi.Idle -> "当前 v$currentVersionName"
-        UpdateUi.Checking -> "正在检查更新…"
-        is UpdateUi.HasUpdate ->
-            "发现新版本 v${s.info.versionName}（来自 ${s.info.source}）" +
-                if (s.info.notes.isNotBlank()) "\n${s.info.notes}" else ""
-        UpdateUi.UpToDate -> "已是最新版本 v$currentVersionName"
-        is UpdateUi.Downloading -> "正在下载… ${s.progress}%"
-        is UpdateUi.Ready -> "下载完成，请在弹出的安装器中确认"
-        is UpdateUi.Failed -> s.message
+    // —— 详情页（画板 32）：发现新版本后的全屏「版本更新 / 更新日志」 ——
+    if (showDetail) {
+        BackHandler(enabled = true) { showDetail = false }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(Modifier.height(34.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.ic_caret_left),
+                    contentDescription = "返回",
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clickable { showDetail = false }
+                        .padding(6.dp),
+                )
+                Spacer(Modifier.width(2.dp))
+                Label(
+                    "版本更新",
+                    TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Tokens.TextPrimary),
+                )
+            }
+            Spacer(Modifier.height(14.dp))
+
+            // 有新版本时显示新版本日志；已是最新时显示当前安装版本的更新日志
+            val hasUpdate = ui is UpdateUi.HasUpdate || ui is UpdateUi.Downloading || ui is UpdateUi.Ready
+            val info = (ui as? UpdateUi.HasUpdate)?.info ?: currentLog
+            if (info != null) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(Tokens.CardRadius))
+                        .background(Tokens.Surface)
+                        .padding(10.dp),
+                ) {
+                    Label(
+                        if (hasUpdate) {
+                            "新版本 v${info.versionName}（来自 ${info.source}）"
+                        } else {
+                            "当前版本 v${info.versionName} · 已是最新"
+                        },
+                        TextStyle(fontSize = 12.sp, color = Tokens.TextPrimary),
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Label(
+                        "更新日志",
+                        TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Tokens.TextPrimary),
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Label(
+                        info.notes.ifBlank { "性能优化与问题修复" },
+                        TextStyle(fontSize = 11.sp, color = Tokens.TextSecondary),
+                        maxLines = 8,
+                    )
+                }
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            // 进度条 + 状态/按钮区
+            when (val s = ui) {
+                is UpdateUi.Downloading -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(5.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(Tokens.Surface),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(s.progress / 100f)
+                                .height(5.dp)
+                                .background(Brush.horizontalGradient(0f to UpdatePillTop, 1f to UpdateCardTop)),
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Label(
+                        "正在下载… ${s.progress}%",
+                        TextStyle(fontSize = 11.sp, color = Tokens.TextSecondary),
+                    )
+                }
+                is UpdateUi.Ready -> {
+                    Label(
+                        "下载完成，请在安装器中确认",
+                        TextStyle(fontSize = 11.sp, color = Tokens.TextSecondary),
+                        maxLines = 2,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    UpdatePill("安装", onClick = { runCatching { AppUpdate.install(context, s.file) } })
+                }
+                is UpdateUi.HasUpdate -> {
+                    UpdatePill("下载并安装", onClick = { download(s.info) })
+                }
+                else -> {}
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+        return
     }
 
-    val actionLabel: String? = when (val s = ui) {
-        UpdateUi.Idle, UpdateUi.UpToDate, is UpdateUi.Failed -> "检查更新"
-        is UpdateUi.HasUpdate -> "下载更新"
-        is UpdateUi.Ready -> "安装"
-        else -> null // Checking / Downloading 进行中，不给按钮
-    }
-
-    Column(
+    // —— 卡片（画板 29）：黑→蓝渐变 + 当前版本 + 检查更新 + 箭头徽标 ——
+    // 徽标可点击：有新版本或已检查过（拿到当前版本日志）时进入详情页
+    val canOpenDetail = ui is UpdateUi.HasUpdate || currentLog != null
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(Tokens.CardRadius))
-            .background(Tokens.Surface)
-            .padding(horizontal = 8.dp, vertical = 7.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+            .clip(RoundedCornerShape(20.dp))
+            .background(Brush.verticalGradient(0f to UpdateCardTop, 1f to UpdateCardBottom)),
     ) {
-        Label(
-            statusText,
-            TextStyle(fontSize = 12.sp, color = Tokens.TextSecondary),
-            textAlign = TextAlign.Center,
-            maxLines = 3,
-        )
-        actionLabel?.let { label ->
-            Spacer(Modifier.height(6.dp))
-            PillButton(
-                label,
-                Tokens.FabBlue,
-                onClick = {
-                    when (val s = ui) {
-                        is UpdateUi.HasUpdate -> download(s.info)
-                        else -> check()
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 14.dp, top = 9.dp, end = 12.dp, bottom = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Label(
+                    "当前版本",
+                    TextStyle(fontSize = 12.sp, color = Color.White),
+                )
+                Spacer(Modifier.height(2.dp))
+                Label(
+                    "v$currentVersionName",
+                    TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White),
+                )
+                when (val s = ui) {
+                    UpdateUi.Checking -> {
+                        Spacer(Modifier.height(3.dp))
+                        Label(
+                            "正在检查更新…",
+                            TextStyle(fontSize = 10.sp, color = Color.White.copy(alpha = 0.7f)),
+                        )
                     }
-                },
+                    UpdateUi.UpToDate -> {
+                        Spacer(Modifier.height(3.dp))
+                        Label(
+                            "已是最新版本",
+                            TextStyle(fontSize = 10.sp, color = Color.White.copy(alpha = 0.7f)),
+                        )
+                    }
+                    is UpdateUi.Failed -> {
+                        Spacer(Modifier.height(3.dp))
+                        Label(
+                            s.message,
+                            TextStyle(fontSize = 10.sp, color = Color.White.copy(alpha = 0.7f)),
+                            maxLines = 2,
+                        )
+                    }
+                    else -> {}
+                }
+                Spacer(Modifier.height(6.dp))
+                UpdatePill("检查更新", onClick = { check() })
+            }
+            // 右上箭头徽标（画板 30，渐变与透明度已烘焙进素材）
+            Image(
+                painter = painterResource(R.drawable.ic_update_badge),
+                contentDescription = "查看更新日志",
+                modifier = Modifier
+                    .size(46.dp)
+                    .then(
+                        if (canOpenDetail) {
+                            Modifier.clickable { showDetail = true }
+                        } else {
+                            Modifier
+                        }
+                    ),
             )
         }
     }
