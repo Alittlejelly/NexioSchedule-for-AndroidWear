@@ -418,19 +418,13 @@ private fun UpdateCard(currentVersionName: String, onOpenDetail: () -> Unit) {
                 Spacer(Modifier.height(6.dp))
                 UpdatePill("检查更新", onClick = { UpdateSession.check(context) })
             }
-            // 右上箭头徽标（画板 30）：有新版本或已检查过时点击进入更新日志页
+            // 右上箭头徽标（画板 30）：随时可点进更新日志页（详情页会自动检测一次更新）
             Image(
                 painter = painterResource(R.drawable.ic_update_badge),
                 contentDescription = "查看更新日志",
                 modifier = Modifier
                     .size(46.dp)
-                    .then(
-                        if (UpdateSession.canOpenDetail) {
-                            Modifier.clickable { onOpenDetail() }
-                        } else {
-                            Modifier
-                        }
-                    ),
+                    .clickable { onOpenDetail() },
             )
         }
     }

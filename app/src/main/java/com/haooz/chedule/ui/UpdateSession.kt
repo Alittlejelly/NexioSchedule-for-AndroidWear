@@ -25,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
 
 /** 版本更新的界面状态 */
@@ -75,12 +76,47 @@ object UpdateSession {
     var currentLog: AppUpdate.Info? by mutableStateOf(null)
         private set
 
-    /** 有新版本、或已检查过拿到当前版本日志时，允许进入详情页 */
-    val canOpenDetail: Boolean
-        get() = ui is UpdateUi.HasUpdate || currentLog != null
+    /** 上次检查结果的本地缓存：没点过「检查更新」时详情页也能展示日志 */
+    var cachedLog: AppUpdate.Info? by mutableStateOf(null)
+        private set
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var promptedFile: File? = null
+    private var cacheLoaded = false
+
+    /**
+     * 读取上次检查的缓存（filesDir/update_cache.json）。
+     * 在详情页进入时调用，保证「从没点过检查更新」也有日志可看。
+     */
+    fun loadCache(context: Context) {
+        if (cacheLoaded) return
+        cacheLoaded = true
+        runCatching {
+            val file = File(context.filesDir, "update_cache.json")
+            if (!file.exists()) return
+            val o = JSONObject(file.readText())
+            cachedLog = AppUpdate.Info(
+                o.optLong("versionCode", 0L),
+                o.optString("versionName", ""),
+                "", // 缓存只用于展示日志，不携带下载路径
+                o.optString("notes", ""),
+                o.optString("source", ""),
+            )
+        }
+    }
+
+    private fun saveCache(context: Context, info: AppUpdate.Info) {
+        runCatching {
+            File(context.filesDir, "update_cache.json").writeText(
+                JSONObject()
+                    .put("versionCode", info.versionCode)
+                    .put("versionName", info.versionName)
+                    .put("notes", info.notes)
+                    .put("source", info.source)
+                    .toString(),
+            )
+        }
+    }
 
     /** 检查更新：Gitee 优先、GitHub 兜底 */
     fun check(context: Context) {
@@ -89,6 +125,9 @@ object UpdateSession {
             ui = withContext(Dispatchers.IO) {
                 AppUpdate.fetchLatest(context).fold(
                     onSuccess = { info ->
+                        // 缓存本次结果：无论有无新版本，notes 都是远程最新一版的日志
+                        cachedLog = info
+                        saveCache(context, info)
                         if (info.versionCode > AppUpdate.currentVersionCode(context)) {
                             UpdateUi.HasUpdate(info)
                         } else {

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,6 +42,13 @@ fun UpdateDetailScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     // 读取 Snapshot 状态即建立订阅，UpdateSession 里任何变化都会触发重组
     val ui = UpdateSession.ui
     BackHandler { onBack() }
+
+    // 进入页面：先读上次检查的本地缓存（没点过检查更新也有日志可看），
+    // 然后自动检测一次更新，结果回来即刷新页面
+    LaunchedEffect(Unit) {
+        UpdateSession.loadCache(context)
+        if (UpdateSession.ui == UpdateUi.Idle) UpdateSession.check(context)
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
         Column(
@@ -71,9 +79,18 @@ fun UpdateDetailScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
             }
             Spacer(Modifier.height(14.dp))
 
-            // 有新版本时显示新版本日志；已是最新时显示当前安装版本的更新日志
+            // 有新版本 → 新版本日志；否则依次取 本次检查结果 / 本地缓存（当前版本日志）
             val hasUpdate = ui is UpdateUi.HasUpdate || ui is UpdateUi.Downloading || ui is UpdateUi.Ready
-            val info = (ui as? UpdateUi.HasUpdate)?.info ?: UpdateSession.currentLog
+            val info = (ui as? UpdateUi.HasUpdate)?.info
+                ?: UpdateSession.currentLog
+                ?: UpdateSession.cachedLog
+            if (info == null && ui == UpdateUi.Checking) {
+                // 无缓存且正在检测时的过渡提示
+                Label(
+                    "正在检查更新…",
+                    TextStyle(fontSize = 12.sp, color = Tokens.TextSecondary),
+                )
+            }
             if (info != null) {
                 Column(
                     modifier = Modifier
