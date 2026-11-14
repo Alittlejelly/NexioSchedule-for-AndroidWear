@@ -2,6 +2,8 @@ package com.haooz.chedule.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -17,8 +19,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
@@ -28,6 +32,9 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.wear.compose.foundation.requestFocusOnHierarchyActive
+import androidx.wear.compose.foundation.rotary.RotaryScrollableDefaults
+import androidx.wear.compose.foundation.rotary.rotaryScrollable
 import androidx.wear.compose.material3.TimeText
 import com.haooz.chedule.R
 
@@ -41,6 +48,8 @@ fun UpdateDetailScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     // 读取 Snapshot 状态即建立订阅，UpdateSession 里任何变化都会触发重组
     val ui = UpdateSession.ui
+    val scrollState = rememberScrollState()
+    val rotaryFocus = remember { FocusRequester() }
     BackHandler { onBack() }
 
     // 进入页面：先读上次检查的本地缓存（没点过检查更新也有日志可看），
@@ -51,9 +60,15 @@ fun UpdateDetailScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     }
 
     Box(modifier = modifier.fillMaxSize()) {
+        // 内容区可滚动 + 表冠支持（触觉必须关，绕开小米手表5缺失的 Google 系统类）
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .requestFocusOnHierarchyActive()
+                .rotaryScrollable(
+                    behavior = RotaryScrollableDefaults.behavior(scrollState, hapticFeedbackEnabled = false),
+                    focusRequester = rotaryFocus,
+                )
                 .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -79,51 +94,57 @@ fun UpdateDetailScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
             }
             Spacer(Modifier.height(14.dp))
 
-            // 有新版本 → 新版本日志；否则依次取 本次检查结果 / 本地缓存（当前版本日志）
-            val hasUpdate = ui is UpdateUi.HasUpdate || ui is UpdateUi.Downloading || ui is UpdateUi.Ready
-            val info = (ui as? UpdateUi.HasUpdate)?.info
-                ?: UpdateSession.currentLog
-                ?: UpdateSession.cachedLog
-            if (info == null && ui == UpdateUi.Checking) {
-                // 无缓存且正在检测时的过渡提示
-                Label(
-                    "正在检查更新…",
-                    TextStyle(fontSize = 12.sp, color = Tokens.TextSecondary),
-                )
-            }
-            if (info != null) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(Tokens.CardRadius))
-                        .background(Tokens.Surface)
-                        .padding(10.dp),
-                ) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(scrollState),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                // 有新版本 → 新版本日志；否则依次取 本次检查结果 / 本地缓存（当前版本日志）
+                val hasUpdate = ui is UpdateUi.HasUpdate || ui is UpdateUi.Downloading || ui is UpdateUi.Ready
+                val info = (ui as? UpdateUi.HasUpdate)?.info
+                    ?: UpdateSession.currentLog
+                    ?: UpdateSession.cachedLog
+                if (info == null && ui == UpdateUi.Checking) {
+                    // 无缓存且正在检测时的过渡提示
                     Label(
-                        if (hasUpdate) {
-                            "新版本 v${info.versionName}（来自 ${info.source}）"
-                        } else {
-                            "当前版本 v${info.versionName} · 已是最新"
-                        },
-                        TextStyle(fontSize = 12.sp, color = Tokens.TextPrimary),
+                        "正在检查更新…",
+                        TextStyle(fontSize = 12.sp, color = Tokens.TextSecondary),
                     )
-                    Spacer(Modifier.height(4.dp))
-                    Label(
-                        "更新日志",
-                        TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Tokens.TextPrimary),
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Label(
-                        info.notes.ifBlank { "性能优化与问题修复" },
-                        TextStyle(fontSize = 11.sp, color = Tokens.TextSecondary),
-                        maxLines = 8,
-                    )
+                }
+                if (info != null) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(Tokens.CardRadius))
+                            .background(Tokens.Surface)
+                            .padding(10.dp),
+                    ) {
+                        Label(
+                            if (hasUpdate) {
+                                "新版本 v${info.versionName}（来自 ${info.source}）"
+                            } else {
+                                "当前版本 v${info.versionName} · 已是最新"
+                            },
+                            TextStyle(fontSize = 12.sp, color = Tokens.TextPrimary),
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Label(
+                            "更新日志",
+                            TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Tokens.TextPrimary),
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Label(
+                            info.notes.ifBlank { "性能优化与问题修复" },
+                            TextStyle(fontSize = 11.sp, color = Tokens.TextSecondary),
+                            maxLines = 20,
+                        )
+                    }
                 }
             }
 
-            Spacer(Modifier.weight(1f))
-
-            // 进度条 + 状态/按钮区
+            // 进度条 + 状态/按钮区（固定在底部，不随日志滚动）
             when (val s = ui) {
                 is UpdateUi.Downloading -> {
                     Box(
@@ -160,7 +181,7 @@ fun UpdateDetailScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                 }
                 else -> {}
             }
-            Spacer(Modifier.height(30.dp))
+            Spacer(Modifier.height(24.dp))
         }
 
         // 贴合屏幕上边缘的曲面时间

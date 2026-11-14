@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -368,6 +369,11 @@ private fun UpdateCard(currentVersionName: String, onOpenDetail: () -> Unit) {
     val context = LocalContext.current
     val ui = UpdateSession.ui
 
+    // 检测到新版本时自动进入更新页（更新详情由独立页面展示）
+    LaunchedEffect(ui) {
+        if (ui is UpdateUi.HasUpdate) onOpenDetail()
+    }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -403,6 +409,13 @@ private fun UpdateCard(currentVersionName: String, onOpenDetail: () -> Unit) {
                         Label(
                             "已是最新版本",
                             TextStyle(fontSize = 10.sp, color = Color.White.copy(alpha = 0.7f)),
+                        )
+                    }
+                    is UpdateUi.HasUpdate -> {
+                        Spacer(Modifier.height(3.dp))
+                        Label(
+                            "发现新版本 v${s.info.versionName}",
+                            TextStyle(fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White),
                         )
                     }
                     is UpdateUi.Failed -> {
